@@ -7,6 +7,14 @@ import trt_pose.coco
 from trt_pose.parse_objects import ParseObjects
 import pprint
 
+
+# Say max 10 people
+
+norm_frames_cnt = 100
+norm_areas = [[0] * norm_frames_cnt] * 10
+norm_areas_idx = 0
+
+
 COCO_CATEGORY = {
         "supercategory": "person", 
         "id": 1, 
@@ -118,7 +126,7 @@ class PoseDraw(object):
         #print('{} ({}) : ({},{})'.format(j, COCO_CATEGORY['keypoints'][j], x, y))
 
 
-    def _draw_rect(self, img, rect, color, width, text_u1=None, text_u2=None, text_d1=None, text_d2=None, fill=False, lowerbar=False):
+    def _draw_rect(self, img, rect, color, width, text_u1=None, text_u2=None, text_d1=None, text_d2=None, fill=False, lowerbar=False, upperbar=False):
 
         # # Following colors are supported:
         # if color == 'brown':
@@ -155,47 +163,47 @@ class PoseDraw(object):
             outline_color = (42, 42, 165)
             text_color = (42, 42, 165)
             fill_color = (42, 42, 165)
-            lowerbar_color = (42, 42, 165)
+            bar_color = (42, 42, 165)
         elif color == 'pink':
             outline_color = (182, 84, 231)
             text_color = (182, 84, 231)
             fill_color = (131, 59, 236)
-            lowerbar_color = (131, 59, 236)
+            bar_color = (131, 59, 236)
         elif color == 'yellow':
             outline_color = (55, 250, 250)
             text_color = (55, 250, 250)
             fill_color = (55, 250, 250)
-            lowerbar_color = (55, 250, 250)
+            bar_color = (55, 250, 250)
         elif color == 'blue':
             outline_color = (240, 120, 0)
             text_color = (240, 120, 0)
             fill_color = (240, 120, 0)
-            lowerbar_color = (240, 120, 0)
+            bar_color = (240, 120, 0)
         elif color == 'green':
             green = (120, 255, 60)
             outline_color = green
             text_color = green
             fill_color = green
-            lowerbar_color = green
+            bar_color = green
         elif color == 'orange':
             outline_color = (25, 140, 255)
             text_color = (25, 140, 255)
             fill_color = (25, 140, 255)
-            lowerbar_color = (25, 140, 255)
+            bar_color = (25, 140, 255)
         elif color == 'red':
             outline_color = (49, 60, 255)
             text_color = (49, 60, 255)
             fill_color = (49, 60, 255)
-            lowerbar_color = (49, 60, 255)
+            bar_color = (49, 60, 255)
         else:
             assert "Color {} not supported".format(color)
             outline_color = (200, 200, 200)
             text_color = (200, 200, 200)
             fill_color = (200, 200, 200)
-            lowerbar_color = (200, 200, 200)
+            bar_color = (200, 200, 200)
 
         # If lowerbar is set, just show text in white.
-        if lowerbar is True:
+        if lowerbar is True or upperbar is True:
             if color == 'yellow':
                 text_color = (255, 0, 0)
             elif color == 'green':
@@ -203,9 +211,9 @@ class PoseDraw(object):
             else:
                 text_color = (255, 255, 255)
 
-        font_size = .75
+        font_size = 1.5
         font_type = cv2.FONT_HERSHEY_PLAIN
-        thickness = 1
+        thickness = 2
         x1, y1, x2, y2 = int(rect[0]), int(rect[1]), int(rect[2]), int(rect[3])
         h, w, _ = img.shape
         cv2.rectangle(img, (x1, y1), (x2, y2), outline_color, width)
@@ -219,19 +227,25 @@ class PoseDraw(object):
         if lowerbar is True:
             alpha = 0.8
             lowerbar_img = img.copy()
-            lowerbar_img[y2-30:y2, x1:x2] = lowerbar_color
+            lowerbar_img[y2-30:y2, x1:x2] = bar_color
             cv2.addWeighted(lowerbar_img, alpha, img, 1 - alpha, 0, img)
+
+        if upperbar is True:
+            alpha = 0.8
+            upperbar_img = img.copy()
+            upperbar_img[y1:y1+30, x1:x2] = bar_color
+            cv2.addWeighted(upperbar_img, alpha, img, 1 - alpha, 0, img)
 
         if text_u1 is not None:
             box_size, _ = cv2.getTextSize(text_u1, font_type, font_size, thickness)
             txt_size = box_size[0]
-            txt_loc = (int(x1 + (x2 - x1)/2 - txt_size/2), y1 + 12)
+            txt_loc = (int(x1 + (x2 - x1)/2 - txt_size/2), y1 + 22)
             cv2.putText(img, text_u1, txt_loc, font_type, font_size, text_color, thickness)
 
         if text_u2 is not None:
             box_size, _ = cv2.getTextSize(text_u2, font_type, font_size, thickness)
             txt_size = box_size[0]
-            txt_loc = (int(x1 + (x2 - x1)/2 - txt_size/2), y1 + 22)
+            txt_loc = (int(x1 + (x2 - x1)/2 - txt_size/2), y1 + 40)
             cv2.putText(img, text_u2, txt_loc, font_type, font_size, text_color, thickness)
 
         if text_d1 is not None:
@@ -248,22 +262,21 @@ class PoseDraw(object):
 
 
 
-    def _draw_bounding_box(self, image, points):
+    def _draw_bounding_box(self, image, points, person_idx):
+        global norm_areas
+        global norm_areas_idx
 
         if len(points) <= 4:
             return
 
-        print('Points:')
-        print(points)
-        print('len(points): {}'.format(len(points)))
+        h, w, _ = image.shape
+
         coords = []
         for point in points:
             x = point['coords'][0]
             y = point['coords'][1]
             #print('Point: ({},{})'.format(x, y))
             coords.append((x, y))
-        print('coords:')
-        print(coords)
         xs = [coords[idx][0] for idx in range(len(coords))]
         ys = [coords[idx][1] for idx in range(len(coords))]
 
@@ -272,23 +285,52 @@ class PoseDraw(object):
         if limit <= 0:
             limit = 1
 
-        print('xs: {}'.format(xs))
-        print('ys: {}'.format(ys))
+        if len(xs) < 7:
+            return
 
-        xs = sorted(xs)
-        x_min = sum(xs[:limit])/float(limit)
-        x_max = sum(xs[-1*limit:])/float(limit)
-        ys = sorted(ys)
-        y_min = int(0.8 * sum(ys[:limit])/float(limit))
-        y_max = int(1.1 * sum(ys[-1*limit:])/float(limit))
+        sorted_xs = sorted(xs)
+        x_min = sum(sorted_xs[:limit])/float(limit)
+        x_max = sum(sorted_xs[-1*limit:])/float(limit)
+        sorted_ys = sorted(ys)
+        y_min = int(0.8 * sum(sorted_ys[:limit])/float(limit))
+        y_max = min(int(1.1 * sum(sorted_ys[-1*limit:])/float(limit)), h-10)
 
+        # Find area of the rectangle.
+        area = int((x_max - x_min) * (y_max - y_min))
+        x_ls= xs[5]
+        x_rs = xs[6]
+        y_ls = ys[5]
+        y_rs = ys[6]
+        dist = abs(y_rs - y_ls) + abs(x_rs - x_ls)
+
+        # There are total 18 points, normalizing based on number of points detected and shoulder width.
+        num_points_detected = len(xs)
+        norm_area = int(area * num_points_detected / (dist * 18))
+
+        # Put this into norm_areas global
+        #print('norm_areas: {}'.format(norm_areas))
+        #print('person_idx: {} '.format(person_idx))
+        norm_areas[person_idx][norm_areas_idx % norm_frames_cnt] = norm_area
+        norm_areas_idx = (norm_areas_idx + 1) % norm_frames_cnt 
+        arr = [norm_areas[person_idx][idx] for idx in range(len(norm_areas[person_idx])) if norm_areas[person_idx][idx] > 0]
+        len_arr = len(arr)
+        avg_arr = int(sum(arr)/len(arr))
+        avg = avg_arr 
+        
         # Draw bounding box.
         self._draw_rect(image, 
                         (x_min, y_min, x_max, y_max),
                         'green',
                         2,
-                        text_u1='Person',
+                        #text_u1='Person {}'.format(person_idx),
+                        #text_u1='Area {}'.format(area),
+                        text_u1='NormArea {}'.format(norm_area),
+                        text_u2='TimeNormArea {}'.format(avg),
+                        upperbar=True,
+                        lowerbar=True,
                         fill=True)
+
+
                         
     def __call__(self, image, object_counts, objects, normalized_peaks):
         topology = TOPOLOGY
@@ -296,7 +338,7 @@ class PoseDraw(object):
         link_color = self.link_color
         height = image.shape[0]
         width = image.shape[1]
-        
+
         K = topology.shape[0]
         count = int(object_counts[0])
         for i in range(count):
@@ -305,21 +347,26 @@ class PoseDraw(object):
             # filter no-neck
             if obj[-1] < 0:
                 continue
-                
 
-            for k in range(K):
-                c_a = topology[k][2]
-                c_b = topology[k][3]
-                if obj[c_a] >= 0 and obj[c_b] >= 0:
-                    peak0 = normalized_peaks[0][c_a][obj[c_a]]
-                    peak1 = normalized_peaks[0][c_b][obj[c_b]]
-                    x0 = round(float(peak0[1]) * width)
-                    y0 = round(float(peak0[0]) * height)
-                    x1 = round(float(peak1[1]) * width)
-                    y1 = round(float(peak1[0]) * height)
-                    cv2.line(image, (x0, y0), (x1, y1), link_color, 2)
+            # filter right and left shoulders
+            if obj[5] < 0 or obj[6] < 0:
+                continue
+
+            # Disable drawing lines.
+            #for k in range(K):
+            #    c_a = topology[k][2]
+            #    c_b = topology[k][3]
+            #    if obj[c_a] >= 0 and obj[c_b] >= 0:
+            #        peak0 = normalized_peaks[0][c_a][obj[c_a]]
+            #        peak1 = normalized_peaks[0][c_b][obj[c_b]]
+            #        x0 = round(float(peak0[1]) * width)
+            #        y0 = round(float(peak0[0]) * height)
+            #        x1 = round(float(peak1[1]) * width)
+            #        y1 = round(float(peak1[0]) * height)
+            #        cv2.line(image, (x0, y0), (x1, y1), link_color, 2)
                     
             C = obj.shape[0]
+
             points = []
             for j in range(C):
                 k = int(obj[j])
@@ -328,13 +375,16 @@ class PoseDraw(object):
                     x = round(float(peak[1]) * width)
                     y = round(float(peak[0]) * height)
                     cv2.circle(image, (x, y), 3, joint_color, -1)
-                    self._draw_point_names(image, (x,y), COCO_CATEGORY['keypoints'][j])
+                    #self._draw_point_names(image, (x,y), COCO_CATEGORY['keypoints'][j])
                     points.append({
                         'point_idx' : j,
                         'point_name' : COCO_CATEGORY['keypoints'][j],
                         'coords' : (x, y)
                         })
             
+            # If less keypoints detected, just ignore this frame.
+            if len(points) < 16:
+                continue
 
-            self._draw_bounding_box(image, points)
+            self._draw_bounding_box(image, points, person_idx=i)
 
