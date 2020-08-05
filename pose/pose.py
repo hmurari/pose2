@@ -18,6 +18,7 @@ curr_time = time.time()
 prev_time = time.time()
 fps = 20
 durations = [0] * 10
+active = [0] * 10
 prev_xs = [0] * 10
 prev_ys = [0] * 10
 
@@ -261,25 +262,25 @@ class PoseDraw(object):
         if upperbar is True:
             alpha = 0.8
             upperbar_img = img.copy()
-            upperbar_img[y1:y1+30, x1:x2] = bar_color
+            upperbar_img[y1:y1+60, x1:x2] = bar_color
             cv2.addWeighted(upperbar_img, alpha, img, 1 - alpha, 0, img)
 
         if text_u1 is not None:
             box_size, _ = cv2.getTextSize(text_u1, font_type, font_size, thickness)
             txt_size = box_size[0]
-            txt_loc = (int(x1 + (x2 - x1)/2 - txt_size/2), y1 + 22)
+            txt_loc = (int(x1 + (x2 - x1)/2 - txt_size/2), y1 + 25)
             cv2.putText(img, text_u1, txt_loc, font_type, font_size, text_color, thickness)
 
         if text_u2 is not None:
             box_size, _ = cv2.getTextSize(text_u2, font_type, font_size, thickness)
             txt_size = box_size[0]
-            txt_loc = (int(x1 + (x2 - x1)/2 - txt_size/2), y1 + 40)
+            txt_loc = (int(x1 + (x2 - x1)/2 - txt_size/2), y1 + 45)
             cv2.putText(img, text_u2, txt_loc, font_type, font_size, text_color, thickness)
 
         if text_d1 is not None:
             box_size, _ = cv2.getTextSize(text_d1, font_type, font_size, thickness)
             txt_size = box_size[0]
-            txt_loc = (int(x1 + (x2 - x1)/2 - txt_size/2), y2 - 15)
+            txt_loc = (int(x1 + (x2 - x1)/2 - txt_size/2), y2 - 8)
             cv2.putText(img, text_d1, txt_loc, font_type, font_size, text_color, thickness)
 
         if text_d2 is not None:
@@ -298,8 +299,11 @@ class PoseDraw(object):
 
         if abs(x - prev_xs[person_idx]) + abs(y - prev_ys[person_idx]) < 30:
             durations[person_idx] = durations[person_idx] + 1.0/fps
+            if durations[person_idx] > 6:
+                active[person_idx] = 1
         else:
             durations[person_idx] = 0
+            #active[person_idx] = 0
 
         prev_xs[person_idx] = x
         prev_ys[person_idx] = y
@@ -345,7 +349,7 @@ class PoseDraw(object):
         x_min = sum(sorted_xs[:limit])/float(limit)
         x_max = sum(sorted_xs[-1*limit:])/float(limit)
         sorted_ys = sorted(ys)
-        y_min = int(0.8 * sum(sorted_ys[:limit])/float(limit))
+        y_min = int(0.7 * sum(sorted_ys[:limit])/float(limit))
         y_max = min(int(1.1 * sum(sorted_ys[-1*limit:])/float(limit)), h-10)
 
         # Find area of the rectangle.
@@ -378,17 +382,23 @@ class PoseDraw(object):
         #avg = int(avg)
 
         duration = self._calc_duration(person_idx, xs, ys)
+        if active[person_idx] == 1:
+            color = 'red'
+        else:
+            color = 'green'
+
         
         # Draw bounding box.
         self._draw_rect(image, 
                         (x_min, y_min, x_max, y_max),
-                        'green',
+                        color,
                         2,
                         #text_u1='Person {}'.format(person_idx),
                         #text_u1='Area {}'.format(area),
                         #text_u1='NormArea {}'.format(avg),
                         text_u1='Dist {}'.format(self.pixels_to_dist(avg)),
-                        text_u2='Time {}'.format(duration),
+                        text_u2='Time {:.2f}'.format(duration),
+                        text_d1='Person {}'.format(person_idx + 1),
                         upperbar=True,
                         lowerbar=True,
                         fill=True)
@@ -408,6 +418,7 @@ class PoseDraw(object):
         # Reset durations if object not detected.
         for idx in range(count,10):
             durations[idx] = 0
+            active[idx] = 0
 
         for i in range(count):
             
@@ -442,7 +453,7 @@ class PoseDraw(object):
                     peak = normalized_peaks[0][j][k]
                     x = round(float(peak[1]) * width)
                     y = round(float(peak[0]) * height)
-                    cv2.circle(image, (x, y), 3, joint_color, -1)
+                    #cv2.circle(image, (x, y), 3, joint_color, -1)
                     #self._draw_point_names(image, (x,y), COCO_CATEGORY['keypoints'][j])
                     points.append({
                         'point_idx' : j,
