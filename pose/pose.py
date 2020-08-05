@@ -6,14 +6,20 @@ import torch2trt
 import trt_pose.coco
 from trt_pose.parse_objects import ParseObjects
 import pprint
+import time
 
 
 # Say max 10 people
 
-norm_frames_cnt = 100
+norm_frames_cnt = 30
 norm_areas = [[0] * norm_frames_cnt] * 10
 norm_areas_idx = 0
-
+curr_time = time.time()
+prev_time = time.time()
+fps = 20
+durations = [0] * 10
+prev_xs = [0] * 10
+prev_ys = [0] * 10
 
 COCO_CATEGORY = {
         "supercategory": "person", 
@@ -112,6 +118,28 @@ class PosePost(object):
  
 
 class PoseDraw(object):
+
+    def pixels_to_dist(self, dist):
+        if dist < 400:
+            return ">20'"
+        elif dist < 450:
+            return "18'"
+        elif dist < 500:
+            return "16'"
+        elif dist < 550:
+            return "14'"
+        elif dist < 600:
+            return "12'"
+        elif dist < 650:
+            return "9'"
+        elif dist < 700:
+            return "6'"
+        elif dist < 750:
+            return "5'"
+        elif dist < 800:
+            return "4'"
+        else:
+            return "3'"
 
     def __init__(self, joint_color=(0, 255, 0), link_color=(100, 100, 100)):
         self.joint_color = joint_color
@@ -260,11 +288,36 @@ class PoseDraw(object):
             txt_loc = (int(x1 + (x2 - x1)/2 - txt_size/2), y2 - 5)
             cv2.putText(img, text_d2, txt_loc, font_type, font_size, text_color, thickness)
 
+    def _calc_duration(self, person_idx, xs, ys):
+        global durations
+        global prev_xs
+        global prev_ys
 
+        x = int(sum(xs)/len(xs))
+        y = int(sum(ys)/len(ys))
+
+        if abs(x - prev_xs[person_idx]) + abs(y - prev_ys[person_idx]) < 30:
+            durations[person_idx] = durations[person_idx] + 1.0/fps
+        else:
+            durations[person_idx] = 0
+
+        prev_xs[person_idx] = x
+        prev_ys[person_idx] = y
+
+        return round(durations[person_idx], 2)
 
     def _draw_bounding_box(self, image, points, person_idx):
         global norm_areas
         global norm_areas_idx
+        global curr_time
+        global prev_time
+        global fps
+
+        curr_time = time.time()
+        elapsed_time = curr_time - prev_time
+        if elapsed_time > 0:
+            fps = 1.0 / elapsed_time
+        prev_time = curr_time
 
         if len(points) <= 4:
             return
@@ -297,6 +350,8 @@ class PoseDraw(object):
 
         # Find area of the rectangle.
         area = int((x_max - x_min) * (y_max - y_min))
+
+        # Find dist between shoulders
         x_ls= xs[5]
         x_rs = xs[6]
         y_ls = ys[5]
@@ -316,6 +371,13 @@ class PoseDraw(object):
         len_arr = len(arr)
         avg_arr = int(sum(arr)/len(arr))
         avg = avg_arr 
+
+        # Multiply by dist_bet_shoulders/total_width
+        #shoulder_width = dist
+        #avg = area * shoulder_width / abs(x_max - x_min) 
+        #avg = int(avg)
+
+        duration = self._calc_duration(person_idx, xs, ys)
         
         # Draw bounding box.
         self._draw_rect(image, 
@@ -324,8 +386,9 @@ class PoseDraw(object):
                         2,
                         #text_u1='Person {}'.format(person_idx),
                         #text_u1='Area {}'.format(area),
-                        text_u1='NormArea {}'.format(norm_area),
-                        text_u2='TimeNormArea {}'.format(avg),
+                        #text_u1='NormArea {}'.format(avg),
+                        text_u1='Dist {}'.format(self.pixels_to_dist(avg)),
+                        text_u2='Time {}'.format(duration),
                         upperbar=True,
                         lowerbar=True,
                         fill=True)
@@ -341,6 +404,11 @@ class PoseDraw(object):
 
         K = topology.shape[0]
         count = int(object_counts[0])
+
+        # Reset durations if object not detected.
+        for idx in range(count,10):
+            durations[idx] = 0
+
         for i in range(count):
             
             obj = objects[0][i]
