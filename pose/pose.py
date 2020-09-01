@@ -179,7 +179,7 @@ class PoseDraw(object):
         #print('{} ({}) : ({},{})'.format(j, COCO_CATEGORY['keypoints'][j], x, y))
 
 
-    def _draw_rect(self, img, rect, color, width, text_u1=None, text_u2=None, text_d1=None, text_d2=None, fill=False, lowerbar=False, upperbar=False):
+    def _draw_rect(self, img, rect, color, width, text_u1=None, text_u2=None, text_d1=None, text_d2=None, fill=False, lowerbar=False, upperbar=False, smaller_bb=False):
 
         # # Following colors are supported:
         # if color == 'brown':
@@ -260,7 +260,7 @@ class PoseDraw(object):
             if color == 'yellow':
                 text_color = (255, 0, 0)
             elif color == 'green':
-                text_color = (255, 0, 0)
+                text_color = (255, 255, 255)
             else:
                 text_color = (255, 255, 255)
 
@@ -269,7 +269,9 @@ class PoseDraw(object):
         thickness = 2
         x1, y1, x2, y2 = int(rect[0]), int(rect[1]), int(rect[2]), int(rect[3])
         h, w, _ = img.shape
-        cv2.rectangle(img, (x1, y1), (x2, y2), outline_color, width)
+
+        if smaller_bb is False:
+            cv2.rectangle(img, (x1, y1), (x2, y2), outline_color, width)
 
         if fill is True:
             alpha = 0.3
@@ -317,11 +319,12 @@ class PoseDraw(object):
         global durations
         global prev_xs
         global prev_ys
+        global fps
 
         x = int(sum(xs)/len(xs))
         y = int(sum(ys)/len(ys))
 
-        if abs(x - prev_xs[person_idx]) + abs(y - prev_ys[person_idx]) < 30:
+        if abs(x - prev_xs[person_idx]) + abs(y - prev_ys[person_idx]) < 100:
             durations[person_idx] = durations[person_idx] + 1.0/fps
             if durations[person_idx] > 6:
                 active[person_idx] = 1
@@ -339,14 +342,7 @@ class PoseDraw(object):
         global norm_areas_idx
         global curr_time
         global prev_time
-        global fps
-
-        curr_time = time.time()
-        elapsed_time = curr_time - prev_time
-        if elapsed_time > 0:
-            fps = 1.0 / elapsed_time
-        prev_time = curr_time
-
+        
         if len(points) <= 4:
             return
 
@@ -385,6 +381,9 @@ class PoseDraw(object):
         y_ls = ys[5]
         y_rs = ys[6]
         dist = abs(y_rs - y_ls) + abs(x_rs - x_ls)
+        
+        # Ensure dist > 0
+        dist = dist or 1
 
         # There are total 18 points, normalizing based on number of points detected and shoulder width.
         num_points_detected = len(xs)
@@ -413,6 +412,24 @@ class PoseDraw(object):
 
         
         # Draw bounding box.
+        smaller_bb = True
+        if smaller_bb is True:
+            y_min = (y_min + y_max)/2 - 15
+            if y_min < 15:
+                y_min = 15
+
+            y_max = (y_min + y_max)/2 + 15
+            if y_max > h * 0.95:
+                y_max = h * 0.95
+
+            center = (x_min + x_max)/2
+            x_min = center - 120
+            x_max = center + 120
+            if x_min < 50:
+                x_min = 50
+            if x_max > w * 0.95:
+                x_max = w * 0.95
+
         self._draw_rect(image, 
                         (x_min, y_min, x_max, y_max),
                         color,
@@ -420,14 +437,20 @@ class PoseDraw(object):
                         #text_u1='Person {}'.format(person_idx),
                         #text_u1='Area {:.0f}'.format(area/1000),
                         #text_u1='NormArea {}'.format(avg),
-                        text_u1='Dist {}'.format(self.pixels_to_dist2(area)),
-                        text_u2='Time {:.2f}'.format(duration),
-                        text_d1='Person {}'.format(person_idx + 1),
+                        text_u1='Person {}'.format(person_idx + 1),
+                        text_u2='Dist {}, Time {:.2f}'.format(self.pixels_to_dist2(area), duration),
                         upperbar=True,
-                        lowerbar=True,
-                        fill=True)
+                        lowerbar=False,
+                        fill=False, 
+                        smaller_bb=smaller_bb)
 
 
+    def _get_centroid(self, points):
+        xs = [points[idx]['coords'][0] for idx in range(len(points))]
+        ys = [points[idx]['coords'][1] for idx in range(len(points))]
+        x = sum(xs)/len(xs)
+        y = sum(ys)/len(ys)
+        return (x, y)
                         
     def __call__(self, image, object_counts, objects, normalized_peaks):
         topology = TOPOLOGY
@@ -439,11 +462,24 @@ class PoseDraw(object):
         K = topology.shape[0]
         count = int(object_counts[0])
 
+        # FPS Calculations
+        global fps
+        global curr_time
+        global prev_time
+
+        curr_time = time.time()
+        elapsed_time = curr_time - prev_time
+        if elapsed_time > 0:
+            fps = 1.0 / elapsed_time
+        prev_time = curr_time
+
         # Reset durations if object not detected.
         for idx in range(count,10):
             durations[idx] = 0
             active[idx] = 0
 
+
+        persons = []
         for i in range(count):
             
             obj = objects[0][i]
@@ -498,8 +534,14 @@ class PoseDraw(object):
                                 })
             
             # If less keypoints detected, just ignore this frame.
-            if len(points) < 8:
-                continue
+            #if len(points) < 8:
+            #    continue
 
-            self._draw_bounding_box(image, points, person_idx=i)
+            # People detected
+            persons.append({'idx': i, 'points': points, 'centroid': self._get_centroid(points)})
+
+
+        persons = sorted(persons, key=lambda item: item['centroid'])
+        for person_idx, person in enumerate(persons):
+            self._draw_bounding_box(image, person['points'], person_idx)
 
