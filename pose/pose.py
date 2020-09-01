@@ -142,7 +142,31 @@ class PoseDraw(object):
         else:
             return "3'"
 
-    def __init__(self, joint_color=(0, 255, 0), link_color=(100, 100, 100)):
+    def pixels_to_dist2(self, area):
+        area = area/1000
+        area = area*0.9
+        if area < 20:
+            return "15'"
+        elif area < 30:
+            return "12'"
+        elif area < 40:
+            return "10'"
+        elif area < 50:
+            return "9'"
+        elif area < 70:
+            return "8'"
+        elif area < 80:
+            return "7'"
+        elif area < 90:
+            return "6'"
+        elif area < 100:
+            return "5'"
+        elif area < 150:
+            return "4'"
+        else:
+            return "3'"
+
+    def __init__(self, joint_color=(0, 255, 0), link_color=(120, 255, 60)):
         self.joint_color = joint_color
         self.link_color = link_color
 
@@ -349,7 +373,7 @@ class PoseDraw(object):
         x_min = sum(sorted_xs[:limit])/float(limit)
         x_max = sum(sorted_xs[-1*limit:])/float(limit)
         sorted_ys = sorted(ys)
-        y_min = int(0.7 * sum(sorted_ys[:limit])/float(limit))
+        y_min = int(0.84 * sum(sorted_ys[:limit])/float(limit))
         y_max = min(int(1.1 * sum(sorted_ys[-1*limit:])/float(limit)), h-10)
 
         # Find area of the rectangle.
@@ -394,9 +418,9 @@ class PoseDraw(object):
                         color,
                         2,
                         #text_u1='Person {}'.format(person_idx),
-                        #text_u1='Area {}'.format(area),
+                        #text_u1='Area {:.0f}'.format(area/1000),
                         #text_u1='NormArea {}'.format(avg),
-                        text_u1='Dist {}'.format(self.pixels_to_dist(avg)),
+                        text_u1='Dist {}'.format(self.pixels_to_dist2(area)),
                         text_u2='Time {:.2f}'.format(duration),
                         text_d1='Person {}'.format(person_idx + 1),
                         upperbar=True,
@@ -432,17 +456,28 @@ class PoseDraw(object):
                 continue
 
             # Disable drawing lines.
-            #for k in range(K):
-            #    c_a = topology[k][2]
-            #    c_b = topology[k][3]
-            #    if obj[c_a] >= 0 and obj[c_b] >= 0:
-            #        peak0 = normalized_peaks[0][c_a][obj[c_a]]
-            #        peak1 = normalized_peaks[0][c_b][obj[c_b]]
-            #        x0 = round(float(peak0[1]) * width)
-            #        y0 = round(float(peak0[0]) * height)
-            #        x1 = round(float(peak1[1]) * width)
-            #        y1 = round(float(peak1[0]) * height)
-            #        cv2.line(image, (x0, y0), (x1, y1), link_color, 2)
+            for k in range(K):
+                c_a = topology[k][2]
+                c_b = topology[k][3]
+
+                # Filter out anything that is face related.
+                # nose - 0
+                # left_eye - 1
+                # right_eye - 2
+                # left_ear - 3
+                # right_ear - 4
+
+                if c_a < 5 or c_b < 5:
+                    continue
+
+                if obj[c_a] >= 0 and obj[c_b] >= 0:
+                    peak0 = normalized_peaks[0][c_a][obj[c_a]]
+                    peak1 = normalized_peaks[0][c_b][obj[c_b]]
+                    x0 = round(float(peak0[1]) * width)
+                    y0 = round(float(peak0[0]) * height)
+                    x1 = round(float(peak1[1]) * width)
+                    y1 = round(float(peak1[0]) * height)
+                    cv2.line(image, (x0, y0), (x1, y1), link_color, 2)
                     
             C = obj.shape[0]
 
@@ -453,16 +488,17 @@ class PoseDraw(object):
                     peak = normalized_peaks[0][j][k]
                     x = round(float(peak[1]) * width)
                     y = round(float(peak[0]) * height)
-                    #cv2.circle(image, (x, y), 3, joint_color, -1)
-                    #self._draw_point_names(image, (x,y), COCO_CATEGORY['keypoints'][j])
-                    points.append({
-                        'point_idx' : j,
-                        'point_name' : COCO_CATEGORY['keypoints'][j],
-                        'coords' : (x, y)
-                        })
+                    if j >= 5:
+                        cv2.circle(image, (x, y), 3, joint_color, 3)
+                        #self._draw_point_names(image, (x,y), COCO_CATEGORY['keypoints'][j])
+                        points.append({
+                                'point_idx' : j,
+                                'point_name' : COCO_CATEGORY['keypoints'][j],
+                                'coords' : (x, y)
+                                })
             
             # If less keypoints detected, just ignore this frame.
-            if len(points) < 16:
+            if len(points) < 8:
                 continue
 
             self._draw_bounding_box(image, points, person_idx=i)

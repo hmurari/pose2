@@ -10,7 +10,10 @@ class Video(object):
         self.qsize = qsize
         self.loop = loop
         self.codec = codec
-        self.video_recorder = cv2.VideoWriter('output.avi', cv2.VideoWriter_fourcc('M','J','P','G'), 10, (640, 480))
+        
+        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+        self.video_recorder = cv2.VideoWriter('output2.avi', fourcc, 15, (640, 480))
+        
         self.reset()
 
     def reset(self):
@@ -32,10 +35,11 @@ class Video(object):
 
     def show_frame(self, frame, record=False):
         # Record video
-        if record is True:
-            self.video_recorder.write(frame)
+        if record:
+            rec_frame = cv2.resize(frame, (640, 480), interpolation = cv2.INTER_AREA)
+            self.video_recorder.write(rec_frame)
         
-        cv2.imshow('Test', frame)
+        cv2.imshow('Audience Measurement', frame)
         key = cv2.waitKey(10)
         if key == 27 or key == ord('q') or key == ord('Q'):
             return -1
